@@ -4,7 +4,7 @@
 #include <fstream>
 #include <vector>
 #include <time.h>
-
+#define TRAINED
 using namespace cv;
 using namespace cv::ml;
 using namespace std;
@@ -76,6 +76,7 @@ void load_images( const string & prefix, const string & filename, vector< string
     ifstream file;
 
     file.open( (prefix+filename).c_str() );
+    cout <<  (prefix+filename).c_str() <<endl;
     if( !file.is_open() )
     {
         cerr << "Unable to open the list of images from " << filename << " filename." << endl;
@@ -291,22 +292,29 @@ void compute_hog( const vector< string > & img_lst, vector< Mat > & gradient_lst
 {
     HOGDescriptor hog;
     hog.winSize = size;
+    hog.nbins = 2;
+    hog.blockStride = Size(8,8);
     Mat gray;
-    vector< Point > location;
     vector< float > descriptors;
 
     vector< string >::const_iterator img = img_lst.begin();
     vector< string >::const_iterator end = img_lst.end();
+//    cout << hog.nbins<<endl;
+
     for( ; img != end ; ++img )
     {
         gray = imread(*img);
-        resize(gray,gray,Size(80,32));
-//        cvtColor( *img, gray, COLOR_BGR2GRAY );
-        cout << hog.winSize<<endl;
+        cvtColor( gray, gray, COLOR_BGR2GRAY );
+        /* read the image and resize it  x 0.2 to 0.8 y 0 and height is halt of source image */
+        gray = Mat(gray,Rect(floor(gray.cols*0.2),0,ceil(gray.cols*0.8)-floor(gray.cols*0.2),ceil(gray.rows*0.5)));
+        resize(gray,gray,Size(64,80));
+
+        cout << hog.cellSize<<endl;
         cout << hog.blockSize<<endl;
         cout << hog.blockStride<<endl;
         hog.compute( gray, descriptors );
-        cout <<descriptors.size()<<endl;
+       cout <<descriptors.size()<<endl;
+       cout <<hog.getDescriptorSize()<<endl;
         gradient_lst.push_back( Mat( descriptors ).clone() );
 
 #ifdef _DEBUG
@@ -327,17 +335,17 @@ void train_svm( const vector< Mat > & gradient_lst, const vector< int > & labels
     /* Default values to train SVM */
     svm->setCoef0(0.0);
     svm->setDegree(1);
-    svm->setTermCriteria(TermCriteria( CV_TERMCRIT_ITER+CV_TERMCRIT_EPS, 1000, 1e-3 ));
+    svm->setTermCriteria(TermCriteria( CV_TERMCRIT_ITER+CV_TERMCRIT_EPS, 100, 1e-3 ));
     svm->setGamma(0);
     svm->setKernel(SVM::LINEAR);
     svm->setNu(0.5);
     svm->setP(0.1); // for EPSILON_SVR, epsilon in loss function?
     svm->setC(0.05); // From paper, soft classifier
     svm->setType(SVM::EPS_SVR); // C_SVC; // EPSILON_SVR; // may be also NU_SVR; // do regression task
+//    svm->trainAuto(train_data);
     svm->train(train_data, ROW_SAMPLE, Mat(labels));
     clog << "...[done]" << endl;
-
-    svm->save( "car.xml" );
+    svm->save( "upperbody.xml" );
 }
 
 void draw_locations( Mat & img, const vector< Rect > & locations, const Scalar & color )
@@ -367,13 +375,15 @@ void test_it( const Size & size )
     vector< Rect > locations;
 
     // Load the trained SVM.
-    svm = StatModel::load<SVM>( "car.xml" );
+    svm = StatModel::load<SVM>( "upperbody.xml" );
     // Set the trained svm to my_hog
-    vector< float > hog_detector;
+    vector <float> hog_detector;
     get_svm_detector( svm, hog_detector );
-
+    my_hog.nbins = ;
+    my_hog.blockStride=Size(8,8);
     my_hog.setSVMDetector(hog_detector);
     // Set the people detector.
+
     hog.setSVMDetector( hog.getDefaultPeopleDetector() );
     // Open the camera.
 //    video.open(0);
@@ -390,25 +400,26 @@ void test_it( const Size & size )
 //        if( img.empty() )
 //            break;
 
-
-
 //        locations.clear();
+        img =imread("/home/wxc/Pictures/INRIAPerson/70X134H96/Test/pos/crop001501f.png");
 //        hog.detectMultiScale( img, locations );
 //        draw_locations( draw, locations, reference );
-        img =imread("/home/wxc/svm/s.jpg");
-        cvtColor(img,img,CV_BGR2GRAY);
+
+//        cvtColor(img,img,CV_BGR2GRAY);
                 draw = img.clone();
         locations.clear();
         my_hog.detectMultiScale( img, locations );
+        cout <<locations.size()<<endl;
         draw_locations( draw, locations, trained );
-
+//        hog.detectMultiScale( img, locations );
+//        draw_locations( draw, locations, trained );
         imshow( "Video", draw );
         key = (char)waitKey( 10 );
         if( 27 == key )
             end_of_process = true;
     }
 }
-
+#ifndef TRAINED
 int main( int argc, char** argv )
 {
 //    cv::CommandLineParser parser(argc, argv, "{help h|| show help message}"
@@ -436,20 +447,28 @@ int main( int argc, char** argv )
 //            << "example: " << argv[0] << " --pd=/INRIA_dataset/ -p=Train/pos.lst --nd=/INRIA_dataset/ -n=Train/neg.lst" << endl;
 //        exit( -1 );
 //    }
-    load_images( "/home/wxc/svm/", "posi.txt", pos_lst );
+    load_images( "/home/wxc/Pictures/INRIAPerson/70X134H96/Test/", "posi.txt", pos_lst );
     labels.assign( pos_lst.size(), +1 );
 //    const unsigned int old = (unsigned int)labels.size();
-    load_images( "/home/wxc/svm/", "nega.txt", neg_lst );
+    load_images( "/home/wxc/Pictures/upperbodyfrontal_dataset/", "nega.txt", neg_lst );
 //    sample_neg( full_neg_lst, neg_lst, Size( 96,160 ) );
     labels.insert( labels.end(), neg_lst.size(), -1 );
 //    CV_Assert( old < labels.size() );
 
-//    compute_hog( pos_lst, gradient_lst, Size(80,32  ) );
-//    compute_hog( neg_lst, gradient_lst, Size(80,32 ) );
+    compute_hog( pos_lst, gradient_lst, Size(64,80) );
+    compute_hog( neg_lst, gradient_lst, Size(64,80) );
 
-//    train_svm( gradient_lst, labels );
+    train_svm( gradient_lst, labels );
 
-   test_it( Size( 80, 32 ) ); // change with your parameters
+//   test_it( Size( 80, 32 ) ); // change with your parameters
 
     return 0;
 }
+#endif
+#ifdef TRAINED
+int main(){
+
+    test_it( Size( 64,80 ) );
+    return 0;
+}
+#endif
